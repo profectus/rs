@@ -1,0 +1,380 @@
+<?php
+/*
+ * Třída pro obsluhu tabulek v administraci s možností řazení
+ *  
+ * @author Filip Štencl
+ * @since 6.7.2013
+ * 
+ */
+
+class table {
+	
+	const ico_presun = "<img src=\"pics/ico_presun.png\" class=\"edit-row\" alt=\"Přesunout tento záznam\" />";
+	const ico_edit = "<img src=\"pics/ico_edit.png\" alt=\"Editovat tento záznam\" />";
+	const ico_delete = "<img src=\"pics/ico_del.png\" alt=\"Smazat tento záznam\" />";	
+	
+	private $pager = false;	
+	private $order = null;
+	private $limit = null;	
+	private $urlRazeni = null;
+	private $jmeno = array();
+	private $sort = array();
+	private $aktualPage = 0;
+	private $pagerCode;
+	private $class;
+	private $id = ""; // slouží i pro uložení sortování do session, nutné vyplnit pro každou tabulku unikátně - slouží také pro ukládání natavení zobrazení tabulek do db
+	private $style;
+	private $thClass;
+	private $nastaveni_povoleno = true;
+	private $sql;
+	private $columnCitac = 0;
+	private $sloupce_db = "";
+	private $content = "";
+	private $pre_content = "";  // obsah pred výpisem tabulky
+	private $post_content = ""; // obsah po výpisu tabulky
+	private $show_search = false;
+	private $show_calendar = false;
+	private $sql_where = " WHERE 1 = 1 ";
+	private $sql_group_by = "";
+
+	
+	public function __construct($sql) { 
+		$this->sql = $sql; 
+		$this->adminPage = adminPage::getInstance(); 
+	}
+	
+	public function setClass($class) { $this->class = $class; return $this; }
+	public function setId($id) { 
+		$this->id = $id; 
+		// pokud neexistuje uzivatelovo nastavení tabulky tak zaloz záznam
+		$pomid = dibi::query("SELECT id FROM [admin_nastaveni] WHERE table_id = %s AND idadmin_uzivatele = %i",$id,intval($_SESSION['admin_id']))->fetchSingle();
+		if ($pomid == null) { 	
+			// záznam v db neexistuje - uložím...
+			$arr = array(
+				'idadmin_uzivatele' => intval($_SESSION['admin_id']),
+				'table_id' => $this->id 
+			);			
+			dibi::query("INSERT INTO [admin_nastaveni]",$arr);
+		}	
+		return $this;
+	}
+	public function setStyle($style) { $this->style = $style; return $this; }
+	public function setThClass($thClass) { $this->thClass = $thClass; return $this; }
+	public function setOrder($order) { $this->order = $order; return $this; }	
+	public function setLimit($limit) { 
+		// ověření zdali si uživatel nenastavil už limit - najití záznamu v databázi (admin_nastaveni)
+		$limit_db = dibi::query("SELECT count FROM [admin_nastaveni] WHERE table_id = %s AND idadmin_uzivatele = %i",$this->id,intval($_SESSION['admin_id']))->fetchSingle();
+		if ($limit_db != null) { 
+			$this->limit = $limit_db; 		
+		} else { 			
+			$this->limit = $limit;
+			// záznam o limitu v db neexistuje - uložím...
+			$arr = array('count' => $limit );				
+			dibi::query("UPDATE [admin_nastaveni] SET ",$arr," WHERE idadmin_uzivatele = %i AND table_id = %s",intval($_SESSION['admin_id']),$this->id);
+		}
+		return $this;
+	}
+                              	
+	public function nastaveni($hodnota=true) { $this->nastaveni_povoleno = $hodnota; return $this;}
+	public function sortable($urlRazeni) {$this->urlRazeni = $urlRazeni; return $this;}
+	public function pager() { 
+		if ($this->limit == null) { $this->limit = 25; }
+		$this->pager = true; $this->pagerCode = self::getPager(); 
+		return $this;
+	}
+	public function getResult() {return dibi::query(self::sestavSQL($this->sql));}
+	public function addMainColumn($jmeno = "",$sort = null) { 
+		$this->jmeno[] = $jmeno; 
+		$this->sort[] = $sort;
+		return $this;
+	}	
+	public function addRow($id = null) { 
+		if ($this->columnCitac > 0) { $this->content .= "\n</tr>"; } // neni první řádek, můžu uzavřít předchozí
+		$this->content .= "\n<tr id=\"$id\">";
+		$this->columnCitac = 1;
+		return $this;
+	}	
+	
+	public function addColumn($text) {		
+		if (empty($this->sloupce_db) || in_array($this->columnCitac,$this->sloupce_db)) { $this->content .= "\n".$text;	}  // ověření, zdali tento sloupec vypisovat
+		$this->columnCitac++;
+		return $this;
+	} 
+	
+	public function addStaticColumn($text) { $this->content .= "\n".$text; return $this; } // nevypnutelný sloupec 
+	public function addStaticColumn_presun() { self::addStaticColumn( "<td class=\"presun\" width=\"20\"><a class=\"tooltip\" title=\"Přesunout tento záznam\">".table::ico_presun."</a></td>"); return $this; }
+	public function addStaticColumn_edit($url) { self::addStaticColumn( "<td width=\"20\"><a href=\"".$url."\" rel=\"modal\" class=\"tooltip\" title=\"Editovat tento záznam\">".table::ico_edit."</a></td>"); return $this; } 
+	public function addStaticColumn_delete($url) { self::addStaticColumn( "<td width=\"20\"><a href=\"".$url."\"  onclick=\"return confirm('Opravdu smazat tuto položku?');\" class=\"tooltip\" title=\"Smazat tento záznam\">".table::ico_delete."</a></td>"); return $this; } 
+	
+		
+	
+	public function where ($where) { $this->sql_where .= " AND ".$where; return $this; }	
+	public function group_by ($group_by) { $this->sql_group_by .= " GROUP BY ".$group_by; return $this; }	
+				
+	private function sestavSQL($sql){					
+		$sql .= $this->sql_where;
+		$sql .= $this->sql_group_by;
+		if ($this->order != null) {$sql .= " ORDER BY ".$this->order; }
+		if ($this->limit != null) {$sql .= " LIMIT ".$this->aktualPage.", ".$this->limit; }		
+		return $sql;
+	}
+	
+	public function tableHead() {						
+		if (isset($_SESSION['admin_sort_'.trim($this->id)]) && $_SESSION['admin_sort_'.trim($this->id)] != "") { $this->order = $_SESSION['admin_sort_'.trim($this->id)];}	
+		$tableOption = "class=\"vypis ".$this->class . ($this->urlRazeni != null?" sortable":"")."\" ";	
+		if ($this->id != "") { $tableOption .= "id=\"".$this->id."\" ";}			
+		if ($this->style != "") { $tableOption .= "style=\"".$this->style."\"";}
+		
+		$table = "";
+		
+		$table .= "<script type='text/javascript'>";
+		$table .= "$(document).ready(function(){";			
+		// javascript pro zobrazení odkazu pro nastavení tabulky po najetí na TH řádek				
+		$table .= "
+			$('table thead tr, .nastaveni').hover(function(){
+				$('.nastaveni').show();						
+			},function () {				
+				$('.nastaveni').stop().hide(); 
+			});	
+					
+		";
+		
+		// javascript pro sortování prvků tabulky
+		if ($this->urlRazeni != null) {			
+			  
+			$table .= "$('table.sortable').tableDnD({";
+			$table .= "dragHandle: 'presun',";
+			$table .= "onDragClass: 'hoverTR',";
+			$table .= "onDrop: function(table, row) {";
+			$table .= "$('#ulozit_razeni').fadeIn(500);";
+			$table .= "var rows = table.tBodies[0].rows;";
+			$table .= "var debugStr = '';";
+			$table .= "for (var i=0; i<rows.length; i++) { debugStr += rows[i].id+'-'; }";
+			$table .= "$('#ulozit_razeni').attr('href','".$this->urlRazeni.(empty($_GET)?"?":"&")."razeni='+debugStr);";
+			$table .= "}});";				
+		}
+		$table .= "});";
+		$table .= "</script>";		
+		
+		// nastavení - odkaz
+		$table .= "\n<div class=\"nastaveni\"><a href=\"#nastaveni_".$this->id."\" class=\"tooltip\" rel=\"modal\" title=\"změnit nastavení této tabulky\">nastavení</a></div>";
+		
+		// nastavení - formulář
+		// nactení sloupců z db
+		$this->sloupce_db = dibi::query("SELECT sloupce FROM [admin_nastaveni] WHERE table_id = %s AND idadmin_uzivatele = %i",$this->id,intval($_SESSION['admin_id']))->fetchSingle();
+		if ($this->sloupce_db != "") { 
+			$this->sloupce_db = explode(", ", $this->sloupce_db);
+			$nalezeno = true;
+		} else { $nalezeno = false;}
+		$sloupce = "";
+		$citac = 1;
+		foreach($this->jmeno as $jmeno) {
+			if ($jmeno != "") {
+				// ovření zdali je sloupec zapnut
+				if ($nalezeno == false && $citac <= 5) {  // pokud nejsou uložená data v databázi, aktivuji prvních 5 sloupců 
+					$zapnout = true;
+				}	else {
+					// zkontroluji jestli je sloupce v db zapnut = zapínám checkbox na ano
+					if (in_array($citac,$this->sloupce_db)) {
+						$zapnout = true;
+					} else { // pokud nenajdu vypínám checkbox
+						$zapnout = false;
+					}				
+				}				
+				$sloupce .= "<tr><td>".adminPage::anoNe("sloupce$citac","zobrazení sloupce <strong>".$jmeno."</strong>",$zapnout,"ano","ne",true)."</td><td></td></tr>";
+				$citac++;
+			}
+		}		
+		$table .= "
+			<div  class=\"none\" id=\"nastaveni_".$this->id."\">	
+				".$this->adminPage->editHead("Upravit položku",true)."
+					<form action=\"./sort.php\" method=\"post\" >
+						<input type=\"hidden\" value=\"".$this->id."\" name=\"nazev\" />
+						<input type=\"hidden\" value=\"".$citac."\" name=\"pocetSloupcu\" />												
+						<table class=\"formular\">
+		";
+		if (intval($this->limit) > 0) {
+			$table .= "
+							<tr>
+								<td>
+									<label>Počet výsledků na stranu</label>
+								</td>
+								<td>
+									<select name=\"limit\" class=\"itext0 fr\">
+										<option value=\"5\" ".($this->limit == 5?"selected=\"selected\"":"").">5</option>
+										<option value=\"10\" ".($this->limit == 10?"selected=\"selected\"":"").">10</option>
+										<option value=\"20\" ".($this->limit == 20?"selected=\"selected\"":"").">20</option>
+										<option value=\"25\" ".($this->limit == 25?"selected=\"selected\"":"").">25</option>
+										<option value=\"50\" ".($this->limit == 50?"selected=\"selected\"":"").">50</option>
+										<option value=\"75\" ".($this->limit == 75?"selected=\"selected\"":"").">75</option>
+										<option value=\"100\" ".($this->limit == 100?"selected=\"selected\"":"").">100</option>
+										<option value=\"250\" ".($this->limit == 250?"selected=\"selected\"":"").">250</option>
+										<option value=\"500\" ".($this->limit == 500?"selected=\"selected\"":"").">500</option>
+									</select>
+								</td>
+							</tr>
+						";
+		}
+		$table .= "					
+							<tr>
+								<td colspan=\"2\">
+									<table style=\"width: 750px; margin: 10px 0; padding: 20px 20px 30px 20px; background-color: #fff; border: 1px solid #ccc; border-radius: 5px;\">
+									<tr><td colspan=\"3\"><strong>Sloupce tabulky:</strong></td></tr>
+									$sloupce
+									</table>
+								</td>							
+							</tr>
+						</table>
+						<table class=\"formular\">
+							<tr>
+								<td><input type=\"submit\" class=\"isubmit\" name=\"update\" value=\"Uložit nastavení\" /></td>
+							</tr>
+						</table>	
+					</form>
+				".$this->adminPage->editFooter(true)."
+			</div>
+		";
+		
+		if ($this->nastaveni_povoleno == false) { $table = ""; }
+		
+		$table = "\n<div id=\"obal_".$this->id."\" class=\"table_obal\">".$table."<table".($tableOption != ""?" ".$tableOption:"")." cellspacing=\"0\" cellpadding=\"0\">";
+		$table .="\n<thead>";
+		$table .="\n<tr>";			
+		
+		$citac = 0;
+		$nepovoleny_sort = false;
+		foreach($this->jmeno as $jmeno) {
+			if (empty($this->sloupce_db) || in_array(($citac + 1),$this->sloupce_db) || $jmeno == "") {
+				$table .="\n<th".($this->thClass != ""?" class=\"".$this->thClass."\"":"").">";			
+				if ($this->sort[$citac] != NULL) {
+					if ($this->id != "") {					
+						$sort = str_replace(" ","__",str_replace(",","-",$this->sort[$citac]));
+						$table .="<a href=\"./sort.php?name=".$this->id."&amp;what=".$sort."\" title=\"Seřadit podle sloupce ".$jmeno."\" class=\"tooltip".(str_replace("ASC","DESC",$this->sort[$citac]) == str_replace("ASC","DESC",$this->order)? " active":"")."\">".$jmeno."</a>";					
+					} else { $nepovoleny_sort = true; $table .= $jmeno."</th>"; }
+				} else { $table .= $jmeno; }
+				$table .= "</th>";
+			}
+			$citac++;
+		}
+		if ($nepovoleny_sort == true) { notification::infoBox_attention("Tabulka nemá nastaven parametr ID, kontaktujte prosím autora projektu");}
+		$table .="\n</tr>";
+		$table .="\n</thead>";
+		$table .="\n<tbody>";
+		$this->pre_content .= $table;
+		return $this;
+	}
+	public function getTableFooter() {
+		$table ="\n</tbody>";		
+		$table .= "\n</table></div>";
+		if ($this->pager == true){ $table .= $this->pagerCode; }
+		return $table;
+	}
+	public function getPager() {	
+		$pager = new pager(); 
+		$pager->setLimit($this->limit);
+		$this->aktualPage = $pager->getNow();
+		return $pager->getPaging_admin($this->sql . $this->sql_where . $this->sql_group_by,$pager->getNow());	
+	}	
+	
+	public function search($kdeHledat) {		
+		$this->show_search = true;
+		$vyhledavani = "<form action=\"sort.php\" method=\"get\" class=\"slideDiv\">";
+		if (isset($_SESSION['admin_search_'.$this->id]) && $_SESSION['admin_search_'.$this->id] != "") {			
+			$pom = explode(",",$kdeHledat);
+			$pomSQL = " AND (";
+			foreach ($pom as $kde => $co) { $pomSQL .= $co." LIKE '%".$_SESSION['admin_search_'.$this->id]."%' OR "; }
+			$pomSQL = mb_substr($pomSQL,0,-4);		
+			$this->sql_where .= $pomSQL.")";			
+		}
+		$vyhledavani .= "<input type=\"text\" value=\"".(isset($_SESSION['admin_search_'.$this->id])?$_SESSION['admin_search_'.$this->id]:"")."\" name=\"search\" class=\"itext tooltip\" title=\"Vyhledávání v záznamech\" />";
+		$vyhledavani .= "<input type=\"hidden\" value=\"".$this->id."\" name=\"name\" />";
+		$vyhledavani .= "<input type=\"submit\" value=\"&raquo;\" class=\"isubmit\" />";
+		$vyhledavani .= "</form>";
+		if (isset($_SESSION['admin_search_'.$this->id]) && $_SESSION['admin_search_'.$this->id] != "") {		
+			$vyhledavani .= "<label class=\"slideDiv\">Hledaná fráze: <strong>".$_SESSION['admin_search_'.$this->id]."</strong> | <a href=\"sort.php?name=".$this->id."&amp;reset=search\" class=\"tooltip\" title=\"Zobrazit zpět všechny záznamy bez upřesnění na vyhledávané slovo\">zrušit filtr</a></label>";			
+		}
+		$pom = "\n<script type=\"text/javascript\">";
+		$pom .= "$(document).ready(function(){ ";
+		$pom .= "	$(\"#obal_".$this->id."\").before('".$vyhledavani."');";
+		if ($this->show_calendar) { // pokud byl nejprve vložen kalendář, tak ho nyní posun (změn na jinou classu)
+			$pom .= "	$('#ico-cal-".$this->id."').removeClass('ico-cal2').addClass('ico-cal');";
+		}
+		$pom .= "});";
+		$pom .= "</script>";
+		$this->pre_content .= $pom;		
+		return $this;
+	}
+		
+	public function calendar($omezeni = "caszalozeni") {		
+		$this->show_calendar = true;		
+		if ($this->show_search) { $trida = "ico-cal"; }  // pokud je zapnuto vyhledávání, výběr datumu přesuň
+		else { $trida = "ico-cal2"; }				
+
+		if (isset($_SESSION['admin_datefiltr_od_'.$this->id]) && $_SESSION['admin_datefiltr_od_'.$this->id] != "") {			
+			$pomSQL = " AND (";
+			$pomSQL .= $_SESSION['admin_datefiltr_omezeni_'.$this->id]." >= '".$_SESSION['admin_datefiltr_od_'.$this->id]." 00:00:00'";
+			$this->sql_where .= $pomSQL.")";			
+		}	
+		if (isset($_SESSION['admin_datefiltr_do_'.$this->id]) && $_SESSION['admin_datefiltr_do_'.$this->id] != "") {			
+			$pomSQL = " AND (";
+			$pomSQL .= $_SESSION['admin_datefiltr_omezeni_'.$this->id]." <= '".$_SESSION['admin_datefiltr_do_'.$this->id]." 23:59:59'";
+			$this->sql_where .= $pomSQL.")";			
+		}				  
+		
+		$pom = adminpage::js_datepicker();
+		$pom .= "
+			<script type=\"text/javascript\">
+				$(document).ready(function(){ 
+					$(\"#ico-cal-".$this->id." .actionplace\").click(function(){ 
+						$(\"#ico-cal-".$this->id." .calendar_inner\").toggle();
+						if ($(\"#ico-cal-".$this->id." .calendar_inner\").is(':visible')) {
+							$(\"#ico-cal-".$this->id."\").css(\"background-color\",\"#FB7F2A\");
+						} else {
+							$(\"#ico-cal-".$this->id."\").css(\"background-color\",\"transparent\");
+						}
+					});
+				});
+			</script>";		
+		$pom .="
+			<div id=\"ico-cal-".$this->id."\" class=\"$trida\"><span class=\"actionplace\"></span>
+				<div class=\"calendar_inner\">
+					<form action=\"sort.php\" method=\"get\">
+						<input type=\"hidden\" value=\"$omezeni\" name=\"datefiltr_omezeni\" />		
+						<input type=\"hidden\" value=\"".$this->id."\" name=\"name\" />
+						<input type=\"text\" value=\"".(isset($_SESSION['admin_datefiltr_od_'.$this->id])?$_SESSION['admin_datefiltr_od_'.$this->id]:"")."\" name=\"datefiltr_od\" placeholder=\"zobrazit od data\" class=\"itext datepicker\" />
+						<input type=\"text\" value=\"".(isset($_SESSION['admin_datefiltr_do_'.$this->id])?$_SESSION['admin_datefiltr_do_'.$this->id]:"")."\" name=\"datefiltr_do\" placeholder=\"zobrazit do data\" class=\"itext datepicker\" />
+						<input type=\"submit\" value=\"zobrazit období &raquo;\" class=\"ibut tooltip\" title=\"vyfiltruje výsledky dle zvolených datumů\" />						
+					</form>
+				</div>
+			</div>";
+		if ((isset($_SESSION['admin_datefiltr_od_'.$this->id]) && $_SESSION['admin_datefiltr_od_'.$this->id] != "") || (isset($_SESSION['admin_datefiltr_do_'.$this->id]) && $_SESSION['admin_datefiltr_do_'.$this->id] != "")) {		
+			$calendar_filtr = "<label class=\"slideDiv\">Časové omezení zobrazených záznamů: od: <strong>".$_SESSION['admin_datefiltr_od_'.$this->id]."</strong> do: <strong>".$_SESSION['admin_datefiltr_do_'.$this->id]."</strong> | <a href=\"sort.php?name=".$this->id."&amp;reset=datefiltr\" class=\"tooltip\" title=\"Zobrazit zpět všechny záznamy bez upřesnění na časový úsek\">zrušit filtr</a></label>";						
+			$pom .= "
+			<script type=\"text/javascript\">
+				$(document).ready(function(){ 					
+					$(\"#obal_".$this->id."\").before('".$calendar_filtr."');		
+				});
+			</script>";			
+		}				
+		$this->pre_content .= $pom;		
+		return $this;
+	}
+	
+	public function test() { dibi::test(self::sestavSQL($this->sql)); return $this; }
+	public function tableFooter($footer = false) { echo self::getTableFooter($footer); }
+	
+	public function getTable() {
+		$pom = $this->pre_content;
+		$pom .= $this->content . "\n</tr>"; // pridam za posledni radek ukonceni radku...
+		$pom .= $this->getTableFooter();
+		$pom .= $this->post_content;
+		return $pom;
+	}
+	
+	public function writeTable() { 
+		if ($this->id == "") { echo "<p>Tabulka nemá nastaveno ID, prosím kontaktujte autora stránek</p>"; notification::infoBox_attention("Chybné nastavení výpisu dat do tabulky<br />Chybné ID"); } 
+		else { echo self::getTable(); } 
+	}
+		
+}
+?>

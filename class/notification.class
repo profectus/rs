@@ -1,0 +1,32 @@
+<?php
+/*
+ * Třída pro odchyt informačních hlášek
+ *  
+ * @author Filip Štencl
+ * @since 5.7.2013
+ * 
+ */
+
+class notification {
+		
+	static function infoBox($msg) {@$_SESSION['notification_information'] .= $msg; }
+	static function infoBox_success($msg) {@$_SESSION['notification_success'] .= $msg; }    
+	static function infoBox_attention($msg) {@$_SESSION['notification_attention'] .= $msg; }
+	static function infoBox_error($msg) {@$_SESSION['notification_error'] .= $msg; }
+	static function infoBox_output($msg) {@$_SESSION['notification_output'] .= $msg; }
+	static function infoBox_alert($msg) {@$_SESSION['notification_alert'] .= $msg; } 
+	
+   static function zaloguj($popis,$pomID = 0,$adminPageId = 0){
+		$arr = array(
+			 'tabulka' => $adminPageId,
+			 'ip' => ip_adresa(),
+			 'pomid' => $pomID,
+			 'popis' => $popis,
+			 'idadmin_uzivatele' => $_SESSION['admin_id']
+		);
+		dibi::query("INSERT INTO [admin_logtable]",$arr);			
+	}
+	
+}
+
+?>

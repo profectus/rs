@@ -1,0 +1,175 @@
+<?php
+/*
+ * Třída pro práci s uživateli adminu
+ *
+ * @author Filip Štencl
+ * @since 22.12.2012
+ * 
+ */
+
+class adminUser extends base {
+	private $id = null;
+	private $login = null;
+	private $jmeno = null;
+	private $prijmeni = null;
+	private $jmeno_prijmeni = null;
+	private $last_login = null;
+	private $stranky = array();
+	private $superadmin = null;
+	private $heslo = null;
+	private $kontakt = null;
+	private $povolen = null;
+	private $login_limit = 50;
+	private $jmeno_limit = 50;
+	private $prijmeni_limit = 50;
+	private $kontakt_limit = 200;
+	private $chyba = null;
+	private $adminPageID = 0;
+	
+	private static $instance = null;
+	public static function getInstance() { if(self::$instance == null) { self::$instance = new adminUser(); } return self::$instance; }  
+	
+	function __construct($id = null) {
+		if (is_null($id)) { $id = $_SESSION['admin_id']; }
+		@session_start();
+		if(isset($_SESSION['admin_id']))
+		{
+			$result = dibi::query("SELECT * FROM [admin_uzivatele] WHERE [id]=".intval($id));
+			if($result->count() > 0) {				
+				$row = $result->fetch();
+				$this->id = $row->id;
+				$this->login = $row->login;
+				$this->jmeno = $row->jmeno;
+				$this->prijmeni = $row->prijmeni;
+				$this->jmeno_prijmeni = $row->jmeno . " " . $row->prijmeni;
+				$this->last_login = datum($row->caszmeny,"d.m.Y H:i:s");
+				$this->stranky = explode(", ",$row->stranky);
+				$this->superadmin = $row->superadmin;
+				$this->heslo = $row->heslo;
+				$this->kontakt = $row->kontakt;
+				$this->povolen = $row->povolen;
+				$this->smazano = $row->smazano;
+			} else { $this->isAuthUser(); }
+		} else { $this->isAuthUser(); }	
+	}
+    
+	public function getId() {return $this->id;}
+	public function getLogin() {return $this->login;}
+	public function getJmeno() {return $this->jmeno;}
+	public function getPrijmeni() {return $this->prijmeni;}
+	public function getJmeno_prijmeni() {return $this->jmeno_prijmeni;}
+	public function getLast_login() {return $this->last_login;}
+	public function getStranky() {return $this->stranky;}
+	public function getSuperadmin() {return $this->superadmin;}
+	public function getKontakt() {return $this->kontakt;}
+	public function getPovolen() {return $this->povolen;}
+	public function setAdminPageID($adminPageID) {$this->adminPageID = $adminPageID; }	
+			
+	public function isAuthUser($kod = null) {	
+		if(!is_null($this->id) && $_SESSION['admin_id'] == $this->id) { 
+			$chyba = true;
+			if ($kod != null) {
+				$result = dibi::query("SELECT [stranky] FROM [admin_uzivatele] WHERE [smazano] = 0 AND [povolen] = 1 AND id = %i",intval($this->id));
+				if($result->count() > 0)
+				{				
+					$stranky = $result->fetchsingle();
+					$pole = explode(", ", $stranky);
+					foreach($pole as $value) {if ($value === $kod) { $chyba = false; }}		
+				} else{$chyba = true;}
+			} else {$chyba = false;}
+			if ($chyba == true)
+			{
+				notification::infoBox_attention("Do této sekce nemáte přístup");
+				redirect("./home.php");
+				return false;	    
+			} else { return true; }
+		} else {
+			$this->destroySession();
+			notification::infoBox_attention("Byl jste odhlášen");
+			redirect("./");
+			return false;
+		}		
+	}
+	public function logout() { $this->destroySession(); return true; }
+	protected function destroySession() { unset($_SESSION['admin_id']); session_destroy(); }		
+	public function create($variables) {
+		$arr = pripravPost($variables);
+		$arr['heslo'] = SHA1($arr['heslo']); 
+		$arr['heslo2'] = SHA1($arr['heslo2']);
+		$arr["stranky"] = implode(", ", $arr["stranky"]);
+		if($this->checkData($arr)) {	    		
+			unset($arr["heslo2"]); // ověření hesla již do insertu v db nevstupuje...
+			if(!dibi::query('INSERT INTO [admin_uzivatele]', $arr)) { notification::infoBox_error("Při ukládání položky se vyskytla chyba");  }
+			else { 
+				notification::infoBox_success("Nový uživatel <strong>".$this->login."</strong> byl přidán do systému"); 				
+				notification::zaloguj("Nový uživatel <strong>".$this->login."</strong> byl přidán do systému",dibi::insertId(),$this->adminPageID);		
+			}	   	    
+		} else { notification::infoBox_error("<strong>Některý z povinných údajů nebyl vyplněn správně</strong><br />" . $this->chyba); }	
+		redirect(adminPage::returnBack());
+	}        
+	public function edit($variables) {
+		$arr = pripravPost($variables);
+		if($this->superadmin == false || $_SESSION['admin_superadmin'] == true) {
+			if($this->checkData($arr)) {													
+				$arr["stranky"] = implode(", ", $arr["stranky"]);
+				if(!dibi::query('UPDATE [admin_uzivatele] SET ', $arr,'WHERE [id]=%i',$this->id)) { notification::infoBox("Při editaci nebyla provedena žádná úprava"); }
+				else { 
+					notification::infoBox_success("Úprava uživatele <strong>".$this->login."</strong>"); 
+					notification::zaloguj("Úprava uživatele <strong>".$this->login."</strong>",$this->id,$this->adminPageID);	
+				}
+			} else {notification::infoBox_error("<strong>Některý z povinných údajů nebyl vyplněn správně</strong><br />" . $this->chyba);}			
+		} else { notification::infoBox_error("Nemáte oprávnění editovat uživatele <strong>$this->login</strong>"); }
+		redirect(adminPage::returnBack());
+	}
+	public function editPass($variables) {
+		$arr = pripravPost($variables);
+		$arr['heslo'] = SHA1($arr['heslo']); 
+		$arr['heslo2'] = SHA1($arr['heslo2']);
+		if($this->checkData($arr)) {													
+			unset($arr["heslo_old"]);  // původní heslo již do updatu v db nevstupuje...
+			unset($arr["heslo2"]);  // ověření hesla již do updatu v db nevstupuje...
+			if(!dibi::query('UPDATE [admin_uzivatele] SET ', $arr,'WHERE [id]=%i',$this->id)) { notification::infoBox("Heslo nebylo změněno, nové heslo se shoduje s původním"); }
+			else { 
+				notification::infoBox_success("Heslo uživatele <strong>".$this->login."</strong> bylo změněno"); 
+				notification::zaloguj("Změna hesla uživatele <strong>".$this->login."</strong>",$this->id,$this->adminPageID);		
+			}
+		} else {notification::infoBox_error("<strong>Některý z povinných údajů nebyl vyplněn správně</strong><br />" . $this->chyba);}			
+		redirect(adminPage::returnBack());
+	} 
+   private function checkData($data)  {		
+		if(array_key_exists("heslo_old",$data)) {if(sha1($data['heslo_old']) != $this->heslo) { $this->chyba .= "Neplatné současné heslo<br />"; return false;}}
+		if(array_key_exists("heslo",$data)) {
+			if(trim(strip_tags($data['heslo'])) != "") { 
+				if(strlen($data['heslo']) < CONST_MIN_CHAR_LOGIN_PASSWORD) { $this->chyba .= "heslo musí obsahovat alespoň ".CONST_MIN_CHAR_LOGIN_PASSWORD." znaků<br />"; return false; }
+			}else { $this->chyba .= "heslo nebylo vyplněno<br />"; return false;}			
+		}		
+		if(array_key_exists("heslo2",$data)) {if($data['heslo'] != $data['heslo2']) { $this->chyba .= "hesla se neshodují<br />"; return false;}}	
+		if(array_key_exists("login",$data)) { // Oveření loginu - ověření na délku a jedinečnost
+			if(strlen($data['login']) <= $this->login_limit) {
+				if(trim(strip_tags($data['login'])) == "") { $this->chyba .= "Login je v nesprávném formátu<br />"; return false;}			
+				if(dibi::query("SELECT * FROM admin_uzivatele WHERE login = '".$this->login."'")->count() > 0) { $this->chyba .= "Zadaný login položky již existuje<br />"; return false; }
+			} else { $this->chyba .= "Login obsahuje více jak ".$this->login_limit." znaků<br />"; return false; }
+		}			
+		if(array_key_exists("jmeno",$data)) { // Oveření jmeno
+			if(strlen($data['jmeno']) <= $this->jmeno_limit) {
+				if(trim(strip_tags($data['jmeno'])) == "") { $this->chyba .= "jmeno musí být vyplněno<br />"; return false;}			
+			} else { $this->chyba .= "jmeno obsahuje více jak ".$this->jmeno_limit." znaků<br />"; return false; }
+		}				
+		if(array_key_exists("prijmeni",$data)) { // Oveření prijmeni
+			if(strlen($data['prijmeni']) <= $this->prijmeni_limit) {
+				if(trim(strip_tags($data['prijmeni'])) == "") { $this->chyba .= "prijmeni musí být vyplněno<br />"; return false;}			
+			} else { $this->chyba .= "prijmeni obsahuje více jak ".$this->prijmeni_limit." znaků<br />"; return false; }
+		}		
+		if(array_key_exists("kontakt",$data)) { // Oveření kontakt
+			if(strlen($data['kontakt']) > $this->kontakt_limit) { $this->chyba .= "kontakt obsahuje více jak ".$this->kontakt_limit." znaků<br />"; return false; }			
+		}
+		return true;
+	}
+    
+}
+
+
+
+
+
+?>

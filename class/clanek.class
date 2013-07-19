@@ -1,0 +1,80 @@
+<?php
+
+/**
+ * Třída pro obsluhu článků kategorií
+ *
+ * @author Filip Štencl
+ * @since 7.7.2013 
+ */
+
+
+class clanek extends base {
+
+	private $id = null;
+	private $idkategorie = null;
+	private $poradi = null;
+	private $nazev = null;  
+	private $anotace = null;  
+	private $detail = null;   
+	private $zobrazit = null;   
+	private $nazev_limit = 250;
+	private $anotace_limit = 2000;
+	private $chyba = null;
+	
+	protected $table = "clanky";
+		
+	 
+	public function __construct($id = null) {
+		if(!is_null($id) && intval($id) != 0) { // Pokud již položka existuje, zpřístupni její vlastnosti
+			$result = dibi::query("SELECT * FROM [clanky] WHERE id= %i",intval($id));
+			if($result->count() > 0) {
+				$row = $result->fetch();
+				$this->id = $row->id;
+				$this->idkategorie = $row->idkategorie;
+				$this->poradi = $row->poradi;
+				$this->nazev = $row->nazev;
+				$this->anotace = $row->anotace;
+				$this->detail = $row->detail;
+				$this->zobrazit = $row->zobrazit;
+			}
+			else {
+				notification::infoBox_error("Požadovaná položka nebyla nalezena");
+				redirect("./home.php");
+			}
+		}
+	}
+    
+	public function getId() { return $this->id; }
+	public function getIdkategorie() { return $this->idkategorie; } 
+	public function getPoradi() { return $this->poradi; }
+	public function getNazev() { return $this->nazev; }
+	public function getAnotace() { return $this->anotace; }
+	public function getDetail() { return $this->detail; }
+	public function getZobrazit() { return $this->zobrazit; }
+           
+	public function create($variables) {		
+		$arr = pripravPost($variables);	
+		$arr["poradi"] = dibi::query("SELECT MAX([poradi]) FROM [clanky] WHERE [idkategorie] = '".$this->idkategorie."'")->fetchSingle() + 1;			
+		$this->nazev = $arr["nazev"];
+		parent::create($arr);
+	} 
+	
+    private function checkData($data) {
+		if(array_key_exists("id",$data)) { if(intval($data['id']) == 0) { $this->chyba .= "ID je v nesprávném formátu<br />"; return false; }}	
+		if(array_key_exists("idkategorie",$data) && intval($data['idkategorie']) == 0) { $this->chyba .= "idkategorie je v nesprávném formátu<br />"; return false; }
+		if(array_key_exists("detail",$data) && trim($data['detail']) == "") { $this->detail = null; }
+		if(array_key_exists("anotace",$data) && strlen($data['anotace']) > $this->anotace_limit) { $this->chyba .= "Anotace obsahuje více jak ".$this->anotace_limit." znaků<br />"; return false; }	
+		// Oveření názvu
+		if(array_key_exists("nazev",$data)) {
+			if(strlen($data['nazev']) <= $this->nazev_limit) {
+				if(trim(strip_tags($data['nazev'])) == "") { $this->chyba .= "Název je v nesprávném formátu<br />"; return false;}			
+			} else { $this->chyba .= "Název obsahuje více jak ".$this->nazev_limit." znaků<br />"; return false; }
+		}		
+		return true;
+   }
+	
+    
+}
+
+?>
+

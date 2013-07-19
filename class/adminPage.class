@@ -1,0 +1,298 @@
+<?php
+/*
+ * Třída popisující jednotlivé podstránky redakčního sytému
+ * Třída hlída přístup uživatelů do jednotlivých sekcí
+ *   
+ * @author Filip Štencl
+ * @since 22.06.2013
+ * 
+ */
+
+class adminPage {
+   
+	private $title = null;
+	private $nadpis = null;
+	private $kategorie = null;
+	private $id = 0;
+	private $parent = 0;
+	private $link = null;
+	private $pagecode = null;
+	private $button = "";
+	private $stop_nav_history = false;
+	
+	private static $instance = null;
+	public static function getInstance() { if(self::$instance == null) { self::$instance = new adminPage(0,true); } return self::$instance; }         
+
+	function __construct($id = null,$stop_nav_history = false) {		
+		$this->stop_nav_history = $stop_nav_history;
+		if ($id === null) {
+			if (!isset($_GET['pagecode'])) {redirect("./");}
+			$result = dibi::query("SELECT kod FROM [admin_nav_history] WHERE [pagecode] = %s ORDER BY id DESC LIMIT 0,1",trim($_GET['pagecode']));
+			if ($result->count() > 0) {
+				$row = $result->fetch();
+				$id = $row->kod;				
+			} else { redirect("./"); }						
+		}	
+		$this->admin = adminUser::getInstance();
+		$this->admin->isAuthUser($id);		
+		if ($id === 0) {
+			$this->title = "Přehled stavu systému | CMS";
+			$this->nadpis = "Přehled stavu systému";
+			$this->id = 0;
+			$this->parent = 0;
+			$this->kategorie = "Přehled stavu systému";
+		} else {	    	   
+			$result = dibi::query(" 
+				SELECT A.kod, A.nazev, K.nazev AS nazevKat, A.idadmin_kategorie FROM admin_stranky A
+				LEFT OUTER JOIN admin_kategorie K ON A.idadmin_kategorie = K.id
+				WHERE A.kod= %s",$id);			
+			$row = $result->fetch();
+			$this->id = $row->kod;
+			$this->nadpis = $row->nazev;
+			$this->title = $row->nazev . " | CMS";
+			$this->parent = $row->idadmin_kategorie;
+			$this->kategorie = $row->nazevKat;
+		}	
+		$this->link = $_SERVER['REQUEST_URI'];
+		$this->pagecode = sha1($_SERVER['REQUEST_URI']);		
+		$this->saveNavigation($this->admin->getId());	
+   }   
+    
+	public function head() { require('./inc/head.inc.php');}
+	public function footer() {require('./inc/footer.inc.php');}
+	
+	public function button($name) { $this->button["name"] = $name; return $this; }
+	public function button_set_blank($blank) { $this->button["blank"] = $blank; return $this; }
+	public function button_set_modal($modal) { $this->button["modal"] = $modal; return $this; }
+	public function button_set_id($id) { $this->button["id"] = $id; return $this; }
+	public function button_set_class($trida) { $this->button["class"] = $trida; return $this; }
+	public function button_set_title($title) { $this->button["title"] = $title; return $this; }
+	public function button_set_url($url) {$this->button["url"] = $url; return $this; }
+	public function button_write() {
+		$blank = ""; $title = ""; $modal = ""; $title_class = ""; $id = "";
+		if (@$this->button["title"] != "") { $title = "title=\"".$this->button["title"]."\""; $title_class = "tooltip"; }
+		if (@$this->button["blank"] == true) { $blank = "target=\"_blank\""; }
+		if (@$this->button["id"] != "") { $id = "id=\"".$this->button["id"]."\""; }
+		if (@$this->button["modal"] == true) { $modal = "rel=\"modal\""; }
+		echo "<a href=\"".$this->button["url"]."\" class=\"ibut ".(@$this->button["class"]==""?"ibut":$this->button["class"])." $title_class\" $id $title $blank $modal>".$this->button["name"]."</a>";
+		unset($this->button);
+		return $this;
+	}
+	public function button_insert($url = null) {
+		if ($url == null) { $url = $this->editUrl().(strpos($this->editUrl(),"?") > 0?"&amp;":"?")."action=insert"; }
+		$this->button("Přidat záznam");
+		$this->button_set_url($url);
+		$this->button_set_title("Zobrazit formulář pro přidání nového záznamu");
+		$this->button_set_modal(true);
+		$this->button_write(); 		
+	}
+	public function button_back($url = null) {
+		if ($url == null) { $url = $this->returnBack(); }
+		$this->button("&laquo; zpět");
+		$this->button_set_url($url);
+		$this->button_set_class("gray");
+		$this->button_set_title("vrátit se zpět na předchozí stranu");
+		$this->button_write(); 	
+	}
+	public function button_razeni() {
+		$this->button("Uložit řazení");
+		$this->button_set_url("#");
+		$this->button_set_id("ulozit_razeni");
+		$this->button_set_class("none red");
+		$this->button_set_title("Uložit změny v seřazení položek");
+		$this->button_write(); 
+	}
+	
+	
+	
+
+	/* 
+	* Funkce pro vypsání položek v menu
+	*/
+	public function getMenu() {			
+		$pom = "<ul id=\"main-nav\">";
+		if ($this->parent == 0) { $check_current = "current"; }
+		else { $check_current = ""; }
+		$pom .= "<li><a href=\"home.php\" class=\"nav-top-item no-submenu $check_current\">Přehled stavu systému</a></li>";
+		$pomID = 0;
+		$result = dibi::query(" 
+			SELECT A.kod, A.url, A.nazev, K.nazev AS nazevKat, A.idadmin_kategorie FROM admin_stranky A
+			LEFT OUTER JOIN admin_kategorie K ON A.idadmin_kategorie = K.id
+			WHERE A.kod IN %in
+			ORDER BY K.poradi ASC, A.poradi ASC",$this->admin->getStranky());		
+		foreach($result->fetchall() as $row) { 
+			if($pomID != $row->idadmin_kategorie) {		
+			if ($pomID > 0) { $pom .= "</ul></li>"; }
+			$pomID = $row->idadmin_kategorie;
+			$pom .= "<li>";
+			if ($row->idadmin_kategorie == $this->parent && $this->parent > 0) { $check_current = "current"; }
+			else { $check_current = ""; }
+			$pom .= "<a href=\"#\" class=\"nav-top-item $check_current\">".$row->nazevKat."</a><ul>";
+			}
+			if ($row->kod === $this->id && $this->id != "") { $check_current = "class=\"current\""; }
+			else { $check_current = ""; }
+			$pom .= "<li><a href=\"".$row->url."\" $check_current>".$row->nazev."</a></li>";
+		}
+		$pom .= "</ul></li></ul>";
+		return $pom;
+    }  
+    
+	public function vypisNadpis(){ echo "<h1>". $this->nadpis."</h1>"; }
+	public function getNadpis(){ return $this->nadpis; }
+	public function getTitle(){ return $this->title; }
+	public function getId(){ return $this->id; }
+	public function getLink() {return $this->link;}
+	public function getPageCode() {return $this->pagecode;}	
+	public function setNadpis($nazev){ $this->nadpis = $nazev; }
+	public function setTitle($title){ $this->title = $title; }
+	
+	/*
+	 * Funkce pro uložení aktuálně navštívené stránky + vygenerování hashe pro zajištění tlačítka zpět
+	 */
+	private function saveNavigation($idadmin_uzivatele) {
+		if ($this->stop_nav_history === false) {
+			$arr = array(
+				'idadmin_uzivatele' => intval($idadmin_uzivatele),
+				'kod' => $this->id,
+				'cesta' => $this->link,
+				'pagecode' => $this->pagecode
+			);
+			dibi::query("INSERT INTO [admin_nav_history]",$arr);
+		}
+	}
+	
+	/*
+	 * Vráti cestu dle zadaného parametru pagecode
+	 */
+	public function returnBack() {
+		$pagecode = @$_GET['pagecode'];
+		if ($pagecode != null) {
+			$result = dibi::query("SELECT [cesta] FROM [admin_nav_history] WHERE [pagecode] = '".$pagecode."' ORDER BY [id] DESC LIMIT 0,1");
+			if ($result->count() > 0) { $cesta = $result->fetchSingle(); }
+			else { return "./"; }
+		} else {
+			$temp = 1;
+			$cesta = str_replace("_edit.", ".", getUrl(), $temp); 
+			if (strpos($cesta,"razeni=") > 0) { $cesta = substr($cesta, 0, strpos($cesta,"razeni=") - 1); } // návrat po seřazení položek
+		}return $cesta;				  
+	}	
+	public function editUrl() {
+		$temp = 1; 
+		if (isset($_GET['pagecode'])) {$pagecode = $_GET['pagecode']; } else {$pagecode = "";}
+		$url = str_replace($pagecode, $this->getPageCode(), getUrl(), $temp);	 
+		$url = str_replace(".php", "_edit.php", $url, $temp); 
+		return str_replace("&", "&amp;", $url);
+	}	
+		public function editHead($nadpis, $return = false) {	
+		if (!IS_AJAX && $return == false) { $this->head(); } 
+		$echo =  "\n<h2 class=\"slideDiv\">$nadpis</h2>";
+		$echo .=  "\n<div class=\"slideDiv\">";
+		$echo .=  "\n<script type=\"text/javascript\">$(document).ready(function() { $(\"form\").validationEngine(\"attach\");});";
+		$echo .=  "\n$(function(){";
+		$echo .=  "\n$(\".tooltip[title]\").mbTooltip({";
+		$echo .=  "\nopacity : .80,";  
+		$echo .=  "\nwait:1,"; 
+		$echo .=  "\ncssClass:\"default\","; 
+		$echo .=  "\ntimePerWord:5000,";    
+		$echo .=  "\nhasArrow:false,";     
+		$echo .=  "\nhasShadow:false,";
+		$echo .=  "\nimgPath:\"pics/\",";
+		$echo .=  "\nanchor:\"parent\",";
+		$echo .=  "\nshadowColor:\"#a59687\",";
+		$echo .=  "\nmb_fade:0";
+		$echo .=  "\n});";   
+		$echo .=  "\n});";
+		$echo .=  "\n$(function(){";
+		$echo .=  "\n$(\".cb-enable\").click(function(){ ";
+		$echo .=  "\nvar parent = $(this).parents('.switch');";
+		$echo .=  "\n$('.cb-disable',parent).removeClass('selected');";
+		$echo .=  "\n$(this).addClass('selected');";
+		$echo .=  "\n$('.checkbox_enable',parent).attr('checked', true);";
+		$echo .=  "\n$('.checkbox_disable',parent).attr('checked', false);";
+		$echo .=  "\n});";
+		$echo .=  "\n$(\".cb-disable\").click(function(){ ";
+		$echo .=  "\nvar parent = $(this).parents('.switch');";
+		$echo .=  "\n$('.cb-enable',parent).removeClass('selected');";
+		$echo .=  "\n$(this).addClass('selected');";
+		$echo .=  "\n$('.checkbox_enable',parent).attr('checked', false);";
+		$echo .=  "\n$('.checkbox_disable',parent).attr('checked', true);";
+		$echo .=  "\n});";
+		$echo .=  "\n});";		
+		$echo .=  "\n$('.isubmit').parents().css('vertical-align','bottom');";				
+		$echo .=  "\n</script>";
+		if ($return == true) { return $echo; }
+		else echo $echo; 		
+	}	
+	public function editFooter($return = false) { 
+		$echo = "\n</div>"; 		
+		if ($return == true) { return $echo; }
+		else {
+			echo $echo;
+			if (!IS_AJAX) { $this->footer(); }
+		}
+	} 	
+	/*
+	 * Vložení CKEditoru pro textarea s name dle parametru
+	 * @param string $name nazev textarea prvku který má být nahrazen editorem
+	 */
+	static function js_ckeditor($name) {		 
+		echo "<script type=\"text/javascript\">";
+		echo "	$(document).ready(function() {";
+		echo "	loadEditor('".$name."');";
+		echo "	});";
+		echo "</script>";    
+	}	
+	static function js_datepicker($return = false) {		 
+		$echo = "<script type=\"text/javascript\">";
+		$echo .= "	$(document).ready(function() {";
+		$echo .= "	$(\".datepicker\").datepicker().attr(\"readonly\",true);";
+		$echo .= "	});";
+		$echo .= "</script>";  
+		if ($return == true) { return $return; } 
+		else { echo $echo;	}
+	}	
+	static function js_multiselect() {
+		echo '<script type="text/javascript">		
+				var id = "";
+				var nazev = "";
+				$(document).ready(function() {	
+					$("select.multiselect").each(function(){
+						id = $(this).attr("id");
+						nazev = $(this).attr("title");					
+						$("#"+id).multiselect({
+							height: 250,
+							checkAllText: "Vybrat vše",
+							uncheckAllText: "Zrušit výběr",
+							noneSelectedText: nazev,
+							selectedText: nazev + " (# z #)"
+						}).multiselectfilter();
+					});
+				});
+			</script>';
+	}
+	
+	static function slideHead($nadpis,$return = false) {
+		$echo = "\n<h2 class=\"slideDiv\">$nadpis</h2>";
+		$echo .= "\n<div class=\"slideDiv\">";
+		if ($return == true) { return $echo; }
+		else echo $echo; 
+	}		
+	static function slideFooter($return = false) {	
+		$echo = "\n</div>"; 
+		if ($return == true) { return $echo; }
+		else echo $echo; 	
+	}		
+	static function anoNe($name,$label,$vyber = 0,$odpo1 = "ano",$odpo2 = "ne", $return = false) {
+		$echo = "\n<div class=\"field switch\">";	
+		$echo .= "\n<input type=\"radio\" name=\"$name\" class=\"checkbox_enable\" value=\"1\" id=\"".$name."1\" ".($vyber == 1?"checked=\"true\"":"")." />";
+		$echo .= "\n<input type=\"radio\" name=\"$name\" class=\"checkbox_disable\" value=\"0\" id=\"".$name."2\" ".($vyber == 0?"checked=\"true\"":"")." />";
+		$echo .= "\n<label for=\"".$name."1\" class=\"cb-enable ".($vyber == 1?"selected":"")."\"><span>$odpo1</span></label>";
+		$echo .= "\n<label for=\"".$name."2\" class=\"cb-disable ".($vyber == 0?"selected":"")."\"><span>$odpo2</span></label>";
+		$echo .= "\n<span class=\"label\">$label</span>";
+		$echo .= "\n<div class=\"clear\"></div></div>";
+		if ($return == true) { return $echo; }
+		else echo $echo; 
+	}
+	
+}
+?>

@@ -1,0 +1,35 @@
+RewriteEngine On
+
+# hlavní menu - rozchodník
+RewriteRule informace-pro-studenty.html(?:\?(.*))? /kategorie\.php\?id=1 
+RewriteRule informace-pro-uchazece.html(?:\?(.*))? /kategorie\.php\?id=2 
+RewriteRule informace-pro-firmy.html(?:\?(.*))? /kategorie\.php\?id=3 
+RewriteRule zakladni-informace-o-skole.html(?:\?(.*))? /kategorie\.php\?id=5 
+RewriteRule pro-absolventy.html(?:\?(.*))? /kategorie\.php\?id=30 
+RewriteRule verejnost-media.html(?:\?(.*))? /kategorie\.php\?id=31 
+RewriteRule veda-vyzkum.html(?:\?(.*))? /kategorie\.php\?id=32 
+RewriteRule knihovna.html(?:\?(.*))? /kategorie\.php\?id=90 
+RewriteRule international.html(?:\?(.*))? /kategorie\.php\?id=33
+
+
+# obrázky
+RewriteRule ^images-(.*)/([0-9]+)x([0-9]+)/(.*)/([0-9]+)/(.*)$ ./obr.php?method=$1&width=$2&height=$3&pom_dir=$4&pom_id=$5&soubor=$6 [NC,L]
+RewriteRule ^images/([0-9]+)x([0-9]+)/(.*)/([0-9]+)/(.*)$ ./obr.php?method=auto&width=$1&height=$2&pom_dir=$3&pom_id=$4&soubor=$5 [NC,L]
+
+#novinky
+RewriteRule ^.*-n(\d+)\.html(?:\?(.*))?$ ./aktuality-det.php\?id=$1&$2 [NC,L]
+
+#projekty
+RewriteRule ^.*-p(\d+)\.html(?:\?(.*))?$ ./projekty-det.php\?id=$1&$2 [NC,L]
+
+#tiskove-zpravy
+RewriteRule ^.*-t(\d+)\.html(?:\?(.*))?$ ./tiskove-zpravy-det.php\?id=$1&$2 [NC,L]
+
+#kategorie
+RewriteRule ^.*-k(\d+)\.html(?:\?(.*))?$ ./kategorie.php\?id=$1&$2 [NC,L]
+
+#clanek
+RewriteRule ^.*-c(\d+)\.html(?:\?(.*))?$ ./clanek.php\?id=$1&$2 [NC,L]
+
+
+RewriteRule (.*)\.html(?:\?(.*))? /$1\.php\?$2 [QSA,L]

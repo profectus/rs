@@ -1,0 +1,65 @@
+<?php
+
+/**
+ * Třída pro nastavení stránek menu redakčního systému
+ *
+ * @author Filip Štencl
+ * @since 5.7.2013 
+ */
+
+class adminStranky extends base {
+	
+	private $id = null;
+	private $nazev = null;
+	private $url = null;
+	private $kod = null;
+	private $idadmin_kategorie = null;
+	private $nazevLimit = 150;
+	protected $table = "admin_stranky";
+	
+	public function __construct($id = null) {
+		if(!is_null($id) && intval($id) != 0) { // Pokud již položka existuje, zpřístupni její vlastnosti
+			$result = dibi::query('SELECT * FROM ['.$this->table.'] WHERE id=%i',intval($id));
+			if($result->count() > 0) {
+				$row = $result->fetch();
+				$this->id = $row->id;
+				$this->nazev = $row->nazev;
+				$this->url = $row->url;
+				$this->kod = $row->kod;
+				$this->idadmin_kategorie = $row->idadmin_kategorie;
+			} else { notification::infoBox_error("Požadovaná položka nebyla nalezena"); redirect("./"); }
+		}
+	}	
+	
+	public function getId() { return $this->id; }
+	public function getNazev() { return $this->nazev; }
+	public function getNazevLimit() { return $this->nazevLimit; }
+	public function getUrl() { return $this->url; }
+	public function getKod() { return $this->kod; }
+	public function getIdadmin_kategorie() { return $this->idadmin_kategorie; }
+	
+	public function create($variables) {	
+		$arr = pripravPost($variables);
+		$arr["idlang"] = $this->idlang;
+		$arr["poradi"] = dibi::query("SELECT MAX([poradi]) FROM ['.$this->table.'] WHERE idadmin_kategorie = %i",intval($arr['idadmin_kategorie']))->fetchSingle() + 1;			
+		$this->nazev = $arr["nazev"];
+		parent::create($arr);     	
+	}        	
+	
+	private function checkData($data) {		
+		if(array_key_exists("id",$data) && intval($data['id']) == 0) { $this->chyba .= "ID je v nesprávném formátu<br />"; return false; }		
+		if(array_key_exists("idadmin_kategorie",$data)) { if(intval($data['idadmin_kategorie']) == 0) { $this->chyba .= "rodič je v nesprávném formátu<br />"; return false; }}		
+		if(array_key_exists("nazev",$data)) { // Oveření názvu
+			if(strlen($data['nazev']) <= $this->getNazevLimit()) {
+				if(trim(strip_tags($data['nazev'])) == "") { $this->chyba .= "Název nebyl vyplněn<br />"; return false;}
+			} else { $this->chyba .= "Název obsahuje více jak ".$this->getNazevLimit()." znaků<br />"; return false; }
+		} 
+		return true;
+	}
+	
+	
+	
+	
+}
+
+?>

@@ -1,0 +1,72 @@
+<?php
+
+/**
+ * Základní třída připravená pro dědění
+ *
+ * @author Filip Štencl
+ * @since 6.7.2013 
+ */
+
+class base {
+	
+	private $id;
+	private $nazev;
+	private $chyba;
+	protected $table = "";
+	
+	
+	public function __construct() {}	
+	
+	public function create($variables) { 
+		// pokud již byla porm. variables přeložena na pole, tak nepřekládej...
+		if (!is_array($variables)) { $arr = pripravPost($variables); } 
+		else { $arr = $variables; }
+		
+		if($this->checkData($arr)) {	    															
+			if(!dibi::query('INSERT INTO ['.$this->table.']', $arr)) { notofication::infoBox_error("Při ukládání položky se vyskytla chyba"); }
+			else { 
+				notification::infoBox_success("Přidání položky: <strong>".$this->getNazev()."</strong>"); 		
+				notification::zaloguj("Přidání položky: <strong>".$this->getNazev()."</strong>",dibi::insertId(),$this->table);					
+			}	   	    
+		} else {notification::infoBox_error("<strong>Některý z povinných údajů nebyl vyplněn</strong><br />" . $this->chyba);}	
+		redirect(adminPage::returnBack());
+	}        
+	public function edit($variables) { 
+		$arr = pripravPost($variables);
+		if($this->checkData($arr)) {			
+			if(!dibi::query('UPDATE ['.$this->table.'] SET ',$arr,'WHERE [id]=%i',$this->getId())) { notification::infoBox("Při editaci nebyla provedena žádná úprava"); }
+			else { 
+				notification::infoBox_success("Úprava položky: <strong>".$this->getNazev()."</strong>"); 
+				notification::zaloguj("Úprava položky: <strong>".$this->getNazev()."</strong>",$this->getId(),$this->table);		
+			}
+		} else {notification::infoBox_error("<strong>Některý z povinných údajů nebyl vyplněn</strong><br />" . $this->chyba);}			
+		redirect(adminPage::returnBack());
+	}
+	public function delete() {
+		if(dibi::query("DELETE FROM [".$this->table."] WHERE [id]=%i",intval($this->getId()))) { 
+			notification::infoBox_success("Položka <strong>".$this->getNazev()."</strong> byla smazána");
+			notification::zaloguj("Položka <strong>".$this->getNazev()."</strong> byla smazána",$this->getId(),$this->table);
+		} else { notification::infoBox_error("Při mazání položky z databáze se vyskytla chyba"); }
+		redirect(adminPage::returnBack(2));
+	} 
+	
+	public function razeni($razeni) {
+		$razeni = explode("-", substr($razeni, 0, strlen($razeni)-1));
+		$ids = implode(',', $razeni);
+		$sql = "UPDATE [$this->table] SET poradi = CASE [id] ";
+		for($i=0; $i<count($razeni); $i++) { $sql .= "WHEN ".$razeni[$i]." THEN ".($i+1)." "; }
+		$sql .= " END WHERE [id] IN ($ids)";			
+		if(!dibi::query($sql)) { notification::infoBox_error("Při řazení položek se vyskytla chyba<br />"); }
+		else { 
+			notification::infoBox_success("Položky byly seřazeny"); 
+			notification::zaloguj("Položky byly seřazeny",$this->getId(),$this->table);			
+		} redirect(adminPage::returnBack());
+	} 
+	
+	private function checkData($data) {
+		if(array_key_exists("id",$data) && intval($data['id']) == 0) { $this->chyba .= "ID je v nesprávném formátu<br />"; return false; }			
+		return true;
+	}
+}
+
+?>

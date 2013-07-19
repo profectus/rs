@@ -1,0 +1,254 @@
+<?php
+
+/**
+ * Instalátor potřebných tříd pro běh administrace a aplikace
+ *
+ * @author Filip Štencl
+ * @since 5.7.2013 
+ */
+
+class install {
+	
+	private $sql = array();
+	public function __construct() { }	
+	public function run() { foreach($this->sql as $prikaz) { dibi::query($prikaz); }	return $this; }
+	public function test() { foreach($this->sql as $prikaz) { dibi::test($prikaz); } return $this; }
+	
+	public function admin_tables() {	
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `admin_uzivatele` (
+		  `id` int(5) NOT NULL AUTO_INCREMENT,
+		  `caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		  `caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+		  `login` varchar(50) NOT NULL,
+		  `jmeno` varchar(50) NOT NULL,
+		  `prijmeni` varchar(50) NOT NULL,
+		  `kontakt` varchar(200) NOT NULL,
+		  `heslo` varchar(40) NOT NULL,
+		  `stranky` varchar(250) NOT NULL,
+		  `povolen` tinyint(1) NOT NULL DEFAULT '0',
+		  `smazano` tinyint(1) NOT NULL DEFAULT '0',
+		  `superadmin` tinyint(1) NOT NULL DEFAULT '0',
+		  PRIMARY KEY (`id`)
+			) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COMMENT='tabulka pro evidenci administrátorů redakčního systému a pře' AUTO_INCREMENT=1 ;	
+		"; array_push($this->sql, $sql);		
+		
+		$sql = "
+			INSERT INTO `admin_uzivatele` (`login`, `jmeno`, `prijmeni`, `kontakt`, `heslo`, `stranky`, `povolen`, `smazano`, `superadmin`) VALUES
+			('".substr(AUTOR_NAME,0,-3)."', 'Filip', 'Štencl', '".AUTOR_HOTLINE."', 'debd22b7fef71330f03f34ab0c3103c5591d574a', 'admin_uzivatele, admin_logtable', 1, 0, 1);
+		";	array_push($this->sql, $sql);		
+				
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `admin_uzivatele_log` (
+			`id` int(9) NOT NULL AUTO_INCREMENT,
+			`caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+			`login` varchar(50) COLLATE utf8_czech_ci NOT NULL,
+			`ip` varchar(128) COLLATE utf8_czech_ci NOT NULL,
+			`uspech` bit(1) NOT NULL DEFAULT b'0',
+			PRIMARY KEY (`id`)
+			) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_czech_ci AUTO_INCREMENT=1 ;
+		"; array_push($this->sql, $sql);		
+		
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `admin_logtable` (
+			`id` int(11) NOT NULL AUTO_INCREMENT,
+			`caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+			`idadmin_uzivatele` int(5) NOT NULL,
+			`tabulka` varchar(100) NOT NULL,
+			`pomid` int(10) NOT NULL,
+			`ip` varchar(128) NOT NULL,
+			`popis` varchar(1000) NOT NULL,
+			PRIMARY KEY (`id`)
+			) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COMMENT='tabulka pro logování změn v redakčním systému' AUTO_INCREMENT=1 ;	
+		"; array_push($this->sql, $sql);		
+				
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `admin_nastaveni` (
+		  `id` int(11) NOT NULL AUTO_INCREMENT,
+		  `caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		  `caszmeny` timestamp NULL DEFAULT NULL,
+		  `idadmin_uzivatele` int(11) NOT NULL,
+		  `table_id` varchar(80) NOT NULL,
+		  `count` int(11) DEFAULT NULL,
+		  `sloupce` varchar(80) DEFAULT NULL,
+		  PRIMARY KEY (`id`)
+			) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COMMENT='tabulka pro ukládání nastavení uživatelů systému' AUTO_INCREMENT=1 ;			
+		"; array_push($this->sql, $sql);		
+		
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `admin_nav_history` (
+		  `id` int(6) NOT NULL AUTO_INCREMENT,
+		  `caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		  `idadmin_uzivatele` int(5) NOT NULL,
+		  `kod` varchar(50) NOT NULL,
+		  `cesta` varchar(500) COLLATE utf8_czech_ci NOT NULL,
+		  `pagecode` varchar(40) COLLATE utf8_czech_ci NOT NULL,
+		  PRIMARY KEY (`id`)
+			) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_czech_ci AUTO_INCREMENT=1 ;			
+		"; array_push($this->sql, $sql);		
+		
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `admin_kategorie` (
+			`id` int(2) NOT NULL AUTO_INCREMENT,
+			`caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+			`nazev` varchar(150) NOT NULL,
+			`poradi` int(2) NOT NULL,
+			PRIMARY KEY (`id`)
+			) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COMMENT='tabulka pro hlavní kategorie redakčního systému' AUTO_INCREMENT=1 ;	
+		"; array_push($this->sql, $sql);		
+		
+		$sql = "
+		INSERT INTO `admin_kategorie` (`nazev`, `poradi`) VALUES ('Správa uživatelů systému', 1);
+		"; array_push($this->sql, $sql);	
+		
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `admin_stranky` (
+			`id` int(3) NOT NULL AUTO_INCREMENT,
+			`caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+			`idadmin_kategorie` int(2) NOT NULL,
+			`nazev` varchar(150) NOT NULL,
+			`url` varchar(150) NOT NULL,
+			`kod` varchar(50) NOT NULL,
+			`poradi` int(3) NOT NULL,
+			PRIMARY KEY (`id`)
+			) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COMMENT='tabulka pro seznam položek v menu' AUTO_INCREMENT=1 ;	
+		"; array_push($this->sql, $sql);	
+		
+		$sql = "
+		INSERT INTO `admin_stranky` (`idadmin_kategorie`, `nazev`, `url`, `kod`, `poradi`) VALUES
+		(1, 'Správa uživatelů systému', 'uzivatele.php', 'admin_uzivatele', 2),
+		(1, 'Historie změn v systému', 'logtable.php', 'admin_logtable', 1);
+		"; array_push($this->sql, $sql);				
+		return $this;
+	}	
+	
+	public function files () {
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `files` (
+			`id` int(7) NOT NULL AUTO_INCREMENT,
+			`caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+			`cesta` varchar(20) NOT NULL,
+			`pomid` int(10) DEFAULT NULL COMMENT 'id článku, novinky apod.',
+			`popis` varchar(250) NOT NULL COMMENT 'název',
+			`soubor` varchar(250) NOT NULL,
+			`velikost` bigint(20) NOT NULL,
+			`pripona` varchar(10) NOT NULL DEFAULT '''''',
+			`hlavni` tinyint(1) NOT NULL DEFAULT '0',
+			`typ` tinyint(1) NOT NULL COMMENT '1 foto, 2 dokument',
+			`poradi` int(7) NOT NULL,
+			PRIMARY KEY (`id`),
+			KEY `pomid` (`pomid`)
+			) ENGINE=InnoDB  DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;			
+		"; array_push($this->sql, $sql);			
+		return $this;
+	}
+		
+	public function novinky () {
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `novinky` (
+			`id` int(5) NOT NULL AUTO_INCREMENT,
+			`caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+			`idlang` int(2) NOT NULL,
+			`datum` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+			`nazev` varchar(250) NOT NULL,
+			`anotace` varchar(2000) DEFAULT NULL,
+			`detail` text,
+			`zobrazit` tinyint(1) NOT NULL DEFAULT '0',
+			PRIMARY KEY (`id`)
+		 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;	
+		"; array_push($this->sql, $sql);			
+		return $this;
+	}
+	
+	public function staticky_text () {
+		$sql = "
+			CREATE TABLE IF NOT EXISTS `staticky_text` (
+			`id` int(11) NOT NULL AUTO_INCREMENT,
+			`caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`caszmeny` timestamp NULL DEFAULT NULL,
+			`idlang` int(2) NOT NULL,
+			`nazev` varchar(250) COLLATE utf8_czech_ci NOT NULL,
+			`nadpis` varchar(250) COLLATE utf8_czech_ci NOT NULL,
+			`detail` text COLLATE utf8_czech_ci NOT NULL,
+			`bit_nadpis` tinyint(1) NOT NULL DEFAULT '0',
+			`bit_fotografie` tinyint(1) NOT NULL DEFAULT '0',
+			`bit_dokumenty` tinyint(1) NOT NULL DEFAULT '0',
+			`bit_textarea` tinyint(1) NOT NULL DEFAULT '0',
+			`url` varchar(250) COLLATE utf8_czech_ci DEFAULT NULL,
+			PRIMARY KEY (`id`)
+		 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_czech_ci COMMENT='tabulka pro ukládání statického textu' AUTO_INCREMENT=1 ;
+		"; array_push($this->sql, $sql);			
+		return $this;
+	}
+	
+	public function kategorie_clanky() {
+		$sql = "
+		CREATE TABLE IF NOT EXISTS `kategorie` (
+		`id` int(5) NOT NULL AUTO_INCREMENT,
+		`caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		`caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+		`idlang` int(2) NOT NULL,
+		`nazev` varchar(150) NOT NULL,
+		`detail` text NOT NULL,
+		`typ` int(3) NOT NULL DEFAULT '0',
+		`presmerovani` varchar(300) DEFAULT NULL,
+		`target_blank` tinyint(1) NOT NULL DEFAULT '0',
+		`rodic` int(5) NOT NULL COMMENT 'pokud se jedná o hlavní kategorii, je rodič = 0, jinak je to id nadřazené kategorie',
+		`poradi` int(5) NOT NULL,
+		`zobrazit` tinyint(1) NOT NULL DEFAULT '0',
+		`stylesid` varchar(250) DEFAULT NULL,
+		`stylesclass` varchar(250) DEFAULT NULL,
+		PRIMARY KEY (`id`)
+		) ENGINE=InnoDB  DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
+		"; array_push($this->sql, $sql);	
+		
+		$sql = "
+		CREATE TABLE IF NOT EXISTS `kategorie_typ` (
+		`id` int(3) NOT NULL AUTO_INCREMENT,
+		`nazev` varchar(100) NOT NULL,
+		`sablona_vypis` varchar(200) NOT NULL,
+		`sablona_detail` varchar(200) NOT NULL,
+		`poradi` int(3) NOT NULL DEFAULT '0',
+		`typHlkat` tinyint(1) NOT NULL DEFAULT '0',
+		`typPodkat` tinyint(1) NOT NULL DEFAULT '0',
+		PRIMARY KEY (`id`)
+		) ENGINE=InnoDB  DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
+		"; array_push($this->sql, $sql);	
+		
+		$sql = "
+		INSERT INTO `kategorie_typ` (`nazev`, `sablona_vypis`, `sablona_detail`, `poradi`, `typHlkat`, `typPodkat`) VALUES
+		('Články', 'clanky.php', 'detail-clanek.php', 2, 1, 1),
+		('Podkategorie', '', '', 1, 1, 0);
+		"; array_push($this->sql, $sql);	
+		
+		$sql = "
+		CREATE TABLE IF NOT EXISTS `clanky` (
+		  `id` int(5) NOT NULL AUTO_INCREMENT,
+		  `caszalozeni` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		  `caszmeny` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+		  `idkategorie` int(5) NOT NULL,
+		  `nazev` varchar(250) NOT NULL,
+		  `mr_url` varchar(300) DEFAULT NULL,
+		  `anotace` varchar(2000) DEFAULT NULL,
+		  `detail` text,
+		  `zobrazit` tinyint(1) NOT NULL DEFAULT '0',
+		  `poradi` int(5) NOT NULL,
+		  PRIMARY KEY (`id`)
+		) ENGINE=InnoDB  DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;			
+		"; array_push($this->sql, $sql);	
+		return $this;
+		
+	}
+	
+	
+}
+
+// kod pro pridani nového sql k vytvoření
+// $sql = ""; array_push($this->sql, $sql);	
+?>

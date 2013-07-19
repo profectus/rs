@@ -1,0 +1,88 @@
+<?php
+/*
+ * Třída pro obsluhu kategorií
+ * 
+ * @author Filip Štencl
+ * @since 7.7.2013
+ * 
+ */
+
+class kategorie extends base {
+
+	const insertHlavniKategorie = false;	
+	private $id = null;
+	private $rodic = null;
+	private $idlang = null;
+	private $poradi = null;
+	private $nazev = null;
+	private $typ = null;
+	private $presmerovani = null;  
+	private $target_blank = null;   
+	private $zobrazit = null;   
+	private $nazev_limit = 150;
+	private $presmerovani_limit = 150;
+	private $chyba = null;
+	private $adminPageID = 0;
+	private $nazev_rodic = null;
+	private $detail = null;
+	
+	protected $table = "kategorie";
+		 
+	public function __construct($id = null) {		
+		if(!is_null($id) && intval($id) != 0) { // Pokud již položka existuje, zpřístupni její vlastnosti
+			$result = dibi::query("SELECT A.*, B.nazev AS nazevRodic FROM [".$this->table."] A LEFT OUTER JOIN [kategorie] B ON A.rodic = B.id WHERE A.id= %i",intval($id));
+			if($result->count() > 0) {
+				$row = $result->fetch();
+				$this->id = $row->id;
+				$this->rodic = $row->rodic;
+				$this->idlang = $row->idlang;
+				$this->poradi = $row->poradi;
+				$this->nazev = $row->nazev;
+				$this->detail = $row->detail;
+				$this->typ = $row->typ;
+				$this->presmerovani = $row->presmerovani;
+				$this->target_blank = $row->target_blank;
+				$this->zobrazit = $row->zobrazit;
+				$this->nazev_rodic = $row->nazevRodic;
+			} else { notification::infoBox_error("Požadovaná položka nebyla nalezena"); redirect("/404.php"); }
+		}
+	}
+    
+	public function getId() { return $this->id; }
+	public function getRodic() { return $this->rodic; }
+	public function getIdlang() { return $this->idlang; }	 
+	public function getPoradi() { return $this->poradi; }
+	public function getNazev() { return $this->nazev; }
+	public function getDetail() { return $this->nazev; }
+	public function getTyp() { return $this->typ; }
+	public function getPresmerovani() { return $this->presmerovani; }
+	public function getTarget_blank() { return $this->target_blank; }
+	public function getZobrazit() { return $this->zobrazit; }
+	
+	public function setIdlang($idlang) { $this->idlang = intval($idlang); }
+    
+	public function create($variables) {		
+		$arr = pripravPost($variables);
+		$arr["idlang"] = $this->idlang;
+		$arr["poradi"] = dibi::query("SELECT MAX([poradi]) FROM [".$this->table."] WHERE rodic = %i",intval($arr['rodic']))->fetchSingle() + 1;	
+		$this->nazev = $arr["nazev"];
+		parent::create($arr);
+	}        	
+	
+	private function checkData($data) {		
+		if(array_key_exists("id",$data) && intval($data['id']) == 0) { $this->chyba .= "ID je v nesprávném formátu<br />"; return false; }			
+		if(array_key_exists("rodic",$data)) { if(intval($data['rodic']) == 0 && $this->insertHlavniKategorie != true) { $this->chyba .= "rodič je v nesprávném formátu<br />"; return false; }}
+		if(array_key_exists("idlang",$data)) { if(intval($data['idlang']) == 0) { $this->chyba .= "idlang je v nesprávném formátu<br />"; return false; }}
+		if(array_key_exists("presmerovani",$data) && strlen($data['presmerovani']) > $this->presmerovani_limit) { $this->chyba .= "Přesmerovani obsahuje více jak ".$this->nazev_limit." znaků<br />"; return false; }
+		if(array_key_exists("nazev",$data)) { // Oveření názvu
+			if(strlen($data['nazev']) <= $this->nazevLimit()) {
+				if(trim(strip_tags($data['nazev'])) == "") { $this->chyba .= "Název nebyl vyplněn<br />"; return false;}
+			} else { $this->chyba .= "Název obsahuje více jak ".$this->nazevLimit()." znaků<br />"; return false; }			
+		} 
+		return true;
+	}
+	
+   	    
+}
+
+?>

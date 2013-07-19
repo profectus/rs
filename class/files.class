@@ -1,0 +1,201 @@
+<?php
+/**
+ * Třída pro obsluhu všech příloh a obrázků připojených k tabulkám napříč celé db
+ * 
+ * @author Filip Štencl
+ * @since 6.7.2013
+ * 
+ */
+
+use Nette\Image;
+
+class files extends base {
+
+	public $auto_max_resize = true;
+	public $max_sirka = 1000;
+	public $max_vyska = 800;
+	public $popis_limit = 250;
+	public $soubor_limit = 250;
+	public $pripony_dokument = array("txt","csv","htm","html","xml","css","doc","docx","xls","xlsx","rtf","ppt","pptx","pdf","swf","flv","avi","wmv","mov","jpg","jpeg","gif","png");
+	public $pripony_foto = array("jpg","jpeg","gif","png"); // skript umí také přijímat .bmp, ale toto nedoporučuji, příliš náročné na procesor serveru při změnšování
+	
+	private $id = null;
+	private $cesta = null;  
+	private $pomid = null;
+	private $popis = null;  
+	private $soubor = null;  
+	private $tempFile = null;
+	private $velikost = null; 
+	private $pripona = null; 
+	private $hlavni = null;   
+	private $typ = null;
+	private $poradi = null;	
+	private $chyba = null;
+	private $adminPageID = 0;
+		 
+	protected $table = "files";
+	
+	public function __construct($id = null) {
+		if(!is_null($id) && intval($id) != 0) {
+			$result = dibi::query('SELECT * FROM ['.$this->table.'] WHERE id=%i',intval($id));
+			if($result->count() > 0) {
+				$row = $result->fetch();
+				$this->id = $row->id;
+				$this->cesta = $row->cesta;
+				$this->pomid = $row->pomid;
+				$this->popis = $row->popis;
+				$this->soubor = $row->soubor;
+				$this->velikost = $row->velikost;
+				$this->pripona = $row->pripona;
+				$this->hlavni = $row->hlavni;
+				$this->typ = $row->typ;
+				$this->poradi = $row->poradi;
+				$this->adminPageID = 0;
+			} else {
+				notification::infoBox_error("Požadovaná položka nebyla nalezena");
+				redirect("./home.php");
+			}
+		}
+	}
+    
+	public function getId() { return $this->id; }
+	public function getCesta() { return $this->cesta; } 
+	public function getPomid() { return $this->pomid; }
+	public function getSoubor() { return $this->soubor; }
+	public function getNazev() { return $this->soubor; }
+	public function getPopis() { return $this->popis; }	
+	public function getVelikost() { return $this->velikost; }
+	public function getPripona() { return $this->pripona; }
+	public function getHlavni() { return $this->hlavni; }
+	public function getTyp() { return $this->typ; }
+	public function getPoradi() { return $this->poradi; }
+
+	public function setId($id) { $this->id = intval($id); }
+	public function setCesta($cesta) { $this->cesta = $cesta; }
+	public function setPomid($pomid) { $this->pomid = intval($pomid); }
+	public function setSoubor($soubor) { $this->soubor = $soubor; }
+	public function setTempFile($tempFile) {$this->tempFile = $tempFile; }	
+	public function setPopis($popis) { $this->popis = $popis; }
+	public function setVelikost($velikost) { $this->velikost = intval($velikost); }
+	public function setPripona($pripona) { $this->pripona = $pripona; }
+	public function setHlavni($hlavni) {$this->hlavni = $hlavni; }
+	public function setTyp($typ) {$this->typ = $typ; }
+	public function setPoradi($poradi) {$this->poradi = $poradi; }
+	public function setAdminPageID($adminPageID) {$this->adminPageID = $adminPageID; }	    
+   
+	public function create($variables) {
+		$arr = pripravPost($variables);
+		$arr["soubor"] = $this->soubor;
+		$arr["velikost"] = $this->velikost;
+		if($this->checkData($arr)) {	    
+			if ($this->velikost > 0) {
+				if ($this->typ == "1" && !in_array(strtolower(substr($this->soubor,strrpos($this->soubor,'.') + 1)),$this->pripony_foto)) { $this->chyba.= "<strong>".$this->soubor."</strong> - tento typ obrázku není podporován.";
+				} else if ($this->typ == "2" && !in_array(strtolower(substr($this->soubor,strrpos($this->soubor,'.') + 1)),$this->pripony_dokument)) { $this->chyba.= "<strong>".$this->soubor."</strong> - tento typ dokumentu není podporován."; 				
+				} else {
+					$cesta = "../data/".$this->cesta."/".$this->pomid."/".($this->typ == "1" ? "foto/":"dokumenty/")."";
+					if (!is_dir($cesta)) { 
+						if (!is_dir("../data")) { mkdir("../data"); }
+						if (!is_dir("../data/".$this->cesta)) { mkdir("../data/".$this->cesta); }
+						if (!is_dir("../data/".$this->cesta."/".$this->pomid)) { mkdir("../data/".$this->cesta."/".$this->pomid); }
+						if (!is_dir("../data/".$this->cesta."/".$this->pomid."/foto")) { mkdir("../data/".$this->cesta."/".$this->pomid."/foto"); }
+						if (!is_dir("../data/".$this->cesta."/".$this->pomid."/dokumenty")) { mkdir("../data/".$this->cesta."/".$this->pomid."/dokumenty"); }
+						//if (!is_dir("../data/".$this->cesta."/".$this->pomid."/foto")) {  mkdir("../data/".$this->cesta."/".$this->pomid."/foto"); }					
+					}
+					move_uploaded_file($this->tempFile,$cesta . $this->soubor);
+					chmod($cesta . $this->soubor, 0646 );  			
+					if ($this->auto_max_resize == true && $this->typ == "1") {						 						
+						$image = Image::fromFile("../data/" . $this->cesta . "/" . $this->pomid . "/foto/" . $this->soubor);
+						$image->resize($this->max_sirka,$this->max_sirka);
+						$image->save("../data/" . $this->cesta . "/" . $this->pomid . "/" . $this->soubor, 90, Image::JPEG); // JPEG, kvalita 90%						
+					}
+				}
+			} else { $this->chyba.= "<strong>".$this->soubor."</strong> - soubor nebyl nahrán. Má nulovou velikost."; }
+			
+			if ($this->chyba == "") {
+				if ($this->hlavni == 1) { dibi::query("UPDATE [".$this->table."] SET hlavni = 0 WHERE pomid = '".$this->pomid."' AND typ = '".$this->typ."' AND cesta = '".$this->cesta."'"); }
+				$arr['poradi'] = dibi::query("SELECT MAX(poradi) FROM [".$this->table."] WHERE pomid = '".$this->pomid."' AND typ = '".$this->typ."' AND cesta = '".$this->cesta."'")->fetchSingle() + 1;									
+				$arr["soubor"] = $this->soubor;
+				if(!dibi::query('INSERT INTO ['.$this->table.']', $arr)) { notification::infoBox_error("Při ukládání položky se vyskytla chyba"); }
+				else { 
+					if ($this->typ == 1) { notification::infoBox_success("<img src=\"../images-crop/50x50/".$this->cesta."/".$this->pomid."/".$this->soubor."\"> Přidání položky: <strong>".$this->soubor."</strong><br />"); }
+					if ($this->typ == 2) { notification::infoBox_success("Přidání položky: <strong>".$this->soubor."</strong><br />"); }
+					notification::zaloguj("Přidání položky: <strong>".$this->soubor."</strong>",dibi::insertId(),$this->adminPageID);		
+				}
+			} else {notification::infoBox_error($this->chyba);}	
+		} else {notification::infoBox_error($this->chyba);}	
+	}        
+
+	public function delete() {
+		if(dibi::query("DELETE FROM [".$this->table."] WHERE id=".$this->id)) { 
+			if (dibi::query("SELECT * FROM [".$this->table."] WHERE pomid = ".$this->pomid." AND cesta = '".$this->cesta."' AND typ = '".$this->typ."'")->count() > 0) {
+				dibi::query("UPDATE [".$this->table."] SET poradi = poradi - 1 WHERE pomid = ".$this->pomid." AND cesta = '".$this->cesta."' AND typ = '".$this->typ."' AND poradi > ".$this->poradi);			
+				if ($this->hlavni == 1) { // pokud je smazana jako hlavni, nastavim hlavni na ten co je první v pořadí daného seznamu				
+					dibi::query("UPDATE [".$this->table."] SET hlavni = 1 WHERE pomid = '".$this->pomid."' AND typ = '".$this->typ."' AND cesta = '".$this->cesta."' AND poradi = 1"); 
+					notification::infoBox("Smazaná fotografie byla označena jako hlavní.<br />Jako hlavní fotografie je nyní použita první fotografie ze seznamu");
+				}
+			}
+			if (file_exists("../data/".$this->cesta."/".$this->pomid."/".($this->typ == 1 ? "":"dokumenty/")."".$this->soubor)) { unlink($cesta); }
+			notification::infoBox_success("Položka <strong>".$this->soubor."</strong> byla smazána");
+			notification::zaloguj("Položka <strong>".$this->soubor."</strong> byla smazána",$this->id,$this->adminPageID);
+		} else { notification::infoBox_error("Při mazání položky z databáze se vyskytla chyba");}
+		redirect(adminPage::returnBack());
+   }    
+ 
+	private function checkData($data) {		
+		if(array_key_exists("pomid",$data)) { if(intval($data['pomid']) > 0) { $this->pomid = intval($data['pomid']); }else { $this->chyba .= "pomid je v nesprávném formátu<br />"; return false; }}	
+		if(array_key_exists("cesta",$data)) { if(trim(strip_tags($data['cesta'])) != "") { $this->cesta = trim(strip_tags($data['cesta'])); }else { $this->chyba .= "Cesta je v nesprávném formátu<br />"; return false;}}		
+		if(array_key_exists("popis",$data)) {if(strlen($data['popis']) <= $this->popis_limit) { $this->popis = trim(strip_tags($data['popis'])); }else { $this->chyba .= "Popis obsahuje více jak ".$this->popis_limit." znaků<br />"; return false; }}		
+		if(array_key_exists("hlavni",$data)) {if($data['hlavni'] == 1) { $this->hlavni = 1; }else { $this->hlavni = null; }}
+		if(array_key_exists("typ",$data)) {if($data['typ'] == 1) { $this->typ = 1; }else { $this->typ = 2; }}		
+		if(array_key_exists("soubor",$data)) {
+			if(strlen($data['soubor']) <= $this->soubor_limit) {
+				if(trim($data['soubor']) != "") { 
+					$pripona = end(explode(".", trim($data['soubor']))); 
+					$soubor_jmeno = substr(trim($data['soubor']),0,  - strlen($pripona) - 1);
+					$this->pripona = ".". strtolower($pripona);
+					$this->soubor = mr_url($soubor_jmeno) . $this->pripona;                   				
+				}
+				else { $this->chyba .= "Soubor je v nesprávném formátu<br />"; return false;}			
+				$result = dibi::query("SELECT * FROM [".$this->table."] WHERE [soubor] = '".$this->soubor."' AND [cesta] = '".$this->cesta."' AND [typ] = '".$this->typ."' AND [pomid] = '".$this->pomid."'");
+				if($result->count() > 0) { $this->chyba .= "Zadaný název souboru (<strong>".$data['soubor']."</strong>) již existuje<br />"; return false; }								
+			} else { $this->chyba .= "Soubor obsahuje více jak ".$this->soubor_limit." znaků<br />"; return false; }
+		}	
+		return true;
+	}    
+	
+	static function vypisFotky($width,$height,$cesta,$pomid,$class = "fotogalerie") {
+		$result = dibi::query("SELECT * FROM [".$this->table."] WHERE cesta = '".$cesta."' AND pomid = '".intval($pomid)."' AND typ = 1 ")->fetchAll();
+        if (count($result) > 0) {
+         $output = "\n<h2>Fotografie</h2>";
+         $output .= "\n<div class=\".$class.\">";
+         foreach($result as $row) {
+             if ($row->popis != "") { $popis = $row->popis; } else {$popis = $row->soubor; }			
+             $output .= "\n<a href=\"./images/800x600/$cesta/$pomid/".$row->soubor."\" title=\"".$popis."\" rel=\"lightbox[]\" class=\"thumbnail\">";
+             $output .= "<img src=\"./images-crop/".$width."x".$height."/$cesta/$pomid/".$row->soubor."\" alt=\"".$popis."\">";
+             $output .= "</a>";			
+         }
+         $output .= "\n<div class=\"clear\"></div></div>";
+         return $output;
+        }
+	}
+	
+	static function vypisDokumenty($cesta,$pomid,$class = "tab-docs") {
+		$result = dibi::query("SELECT * FROM [".$this->table."] WHERE cesta = '".$cesta."' AND pomid = '".intval($pomid)."' AND typ = 2")->fetchAll();
+		if (count($result) > 0) {
+         $output = "\n<h2>Dokumenty</h2>";
+         $output .= "\n<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" class=\"$class\">";
+         foreach($result as $row) {
+             if ($row->popis != "") { $popis = $row->popis; } else {$popis = $row->soubor; }		
+             $output .= "\n<tr>";
+             $output .= "<td><a href=\"/data/$cesta/$pomid/dokumenty/".$row->soubor."\" title=\"".$popis."\" target=\"_blank\">".$popis."</a></td>";
+             $output .= "<td class=\"taright\">".toVelikost($row->velikost)."<td>";
+             $output .= "<td><a href=\"/data/$cesta/$pomid/dokumenty/".$row->soubor."\" title=\"".$popis."\" target=\"_blank\">otevřít &raquo;</a></td>";
+             $output .= "\n</tr>";
+         }
+         $output .= "\n</table>";
+         return $output;
+        }
+	}
+
+}
+?>
